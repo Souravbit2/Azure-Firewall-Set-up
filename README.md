@@ -22,7 +22,9 @@ Azure Firewall uses a **Firewall Policy** to manage its rule sets. This is the r
     * Click "Create".
     * Provide a **Subscription**, **Resource group name** (e.g., `fweastus`), and **Region**. This region should be the same for all related resources.
     * Review and Create.
-<img width="1690" height="823" alt="image" src="https://github.com/user-attachments/assets/0a557e10-8e64-4e1a-8d13-512ae1fd7ead" />
+
+<img width="1270" height="592" alt="image" src="https://github.com/user-attachments/assets/5bb87331-6a3c-41c5-b439-08796afee5a5" />
+
 
 
 2.  **Create a Virtual Network (if you don't have one):**
@@ -70,14 +72,18 @@ For traffic from your workloads (VMs in other subnets/VNets) to flow through the
 **Steps to Create a Default Route:**
 
 1.  **Note the Azure Firewall Private IP Address:**
-    * After the firewall deployment completes, go to your deployed Azure Firewall resource (`AzFW01`).
+    * After the firewall deployment completes, go to your deployed Azure Firewall resource (`fw`).
     * On the "Overview" page, note down the **Private IP address** of the firewall.
+
+<img width="1188" height="405" alt="image" src="https://github.com/user-attachments/assets/486937ad-5f9d-4260-9a14-d09ec802c846" />
 
 2.  **Create a Route Table:**
     * From the Azure portal, search for "Route tables" and select it.
     * Click "Create".
-    * Provide **Subscription**, **Resource group** (`Test-FW-RG`), **Region**, and a **Name** (e.g., `Firewall-RouteTable`).
+    * Provide **Subscription**, **Resource group** (`fwEastus`), **Region**, and a **Name** (e.g., `Firewall-RouteTable`).
     * Review and Create.
+
+<img width="1182" height="249" alt="image" src="https://github.com/user-attachments/assets/c2ba5481-8486-43bf-bc17-58786fdf39dc" />
 
 3.  **Add the Default Route to the Route Table:**
     * Once the route table is deployed, go to the `Firewall-RouteTable` resource.
@@ -90,6 +96,8 @@ For traffic from your workloads (VMs in other subnets/VNets) to flow through the
     * For **Next hop address**, enter the **Private IP address** of your Azure Firewall that you noted earlier.
     * Click "Add".
 
+<img width="1304" height="452" alt="image" src="https://github.com/user-attachments/assets/d3f1bbf3-a25f-4512-9883-762a065de798" />
+
 4.  **Associate the Route Table with Workload Subnets:**
     * From the `Firewall-RouteTable` resource, under "Settings", select "Subnets".
     * Click "+ Associate".
@@ -97,7 +105,12 @@ For traffic from your workloads (VMs in other subnets/VNets) to flow through the
     * For **Subnet**, select the specific subnet(s) where your VMs are located that need to route traffic through the firewall (e.g., `Workload-SN`).
     * Click "OK".
 
-    **Important:** Do NOT associate this route table with the `AzureFirewallSubnet`. Doing so will break the firewall's functionality.
+<img width="1278" height="561" alt="image" src="https://github.com/user-attachments/assets/070e8d8f-9060-435c-80df-2a3bab96f6cc" />
+
+<img width="1287" height="520" alt="image" src="https://github.com/user-attachments/assets/d9f1e728-b2db-49ed-9a22-4af13bd78e6c" />
+
+
+ **Important:** Do NOT associate this route table with the `AzureFirewallSubnet`. Doing so will break the firewall's functionality.
 
 ## 3. Create a Rule for the Application
 
@@ -112,7 +125,7 @@ Let's create an example **Application Rule** to allow outbound access to a speci
 **Steps to Create an Application Rule:**
 
 1.  **Navigate to your Firewall Policy:**
-    * From your Azure Firewall resource (`AzFW01`), click on the "Firewall Policy" link in the "Overview" blade (or search for "Firewall policies" and select `MyFWPolicy`).
+    * From your Azure Firewall resource (`fw`), click on the "Firewall Policy" link in the "Overview" blade (or search for "Firewall policies" and select `MyFWPolicy`).
 
 2.  **Create an Application Rule Collection:**
     * On the Firewall Policy page, under "Settings", select "Application Rules".
@@ -139,6 +152,78 @@ Let's create an example **Application Rule** to allow outbound access to a speci
 * **Network Rules** are processed next. If a match is found, the action (allow/deny) is taken, and no further rules are processed.
 * **Application Rules** are processed if no network rule matches and the protocol is HTTP, HTTPS, or MSSQL.
 * If no rule matches, the traffic is **denied by default**.
+
+## 4. Test VM connecting to Firewall Set up
+   Most of the windows based VMs have their RDP traffic flow through the port 3389 hence the port needs to be open in NSG as well as we'll have to create a DNAT port based rule under firewall policy to ensure the firewall allows traffic coming to the same port from public internet. without this rule set up , the firewall by default blocks RDP traffic both ways, so it's very crucial that we create this.
+
+1. Create a DNAT Rule in Azure Firewall
+To allow RDP traffic from the internet to your VM:
+- Go to Azure Firewall > Rules > NAT Rule Collection
+- Add a DNAT rule:
+- Source: * (or restrict to specific public IPs)
+- Destination: Public IP of the Azure Firewall
+- Destination Port: Custom port (e.g., 50001)
+- Translated Address: Private IP of the VM
+- Translated Port: 3389 (default RDP port)
+This forwards RDP traffic from the firewall’s public IP to your VM.
+<img width="1304" height="378" alt="image" src="https://github.com/user-attachments/assets/1c0672b8-b081-4cc1-bb24-d3c12646d3ee" />
+<img width="1299" height="412" alt="image" src="https://github.com/user-attachments/assets/b9ecb145-1f84-4aa8-b8f4-a0019bd75c4e" />
+
+🔁 2. Update Route Table
+Ensure traffic flows through the firewall:
+- Create a Route Table
+- Add a route:
+- Address Prefix: 0.0.0.0/0
+- Next Hop Type: Virtual appliance
+- Next Hop IP: Private IP of Azure Firewall
+- Associate this route table with the VM’s subnet.
+
+🔒 3. Check NSG and Guest OS Firewall
+- Network Security Group (NSG):
+- Allow inbound traffic on port 3389 from the firewall’s IP or your public IP.
+- Windows Firewall on VM:
+- Ensure RDP is allowed.
+- You can run this command via Serial Console or recovery VM:
+netsh advfirewall firewall set rule group="Remote Desktop" new enable=yes
+
+🧠 Pro Tip
+**Avoid asymmetric routing by ensuring all traffic (inbound and outbound) flows through the firewall. If you’ve set up a route to the firewall, you can’t RDP directly to the VM’s public IP.**
+Once you've created the DNAT rule and updated the route table to route traffic through Azure Firewall, here's how you should RDP into your VM:
+
+## 5. Test VM RDP connectivity
+   🖥️ Use the Firewall’s Public IP + Custom Port
+   You **must not** use the VM’s public IP anymore—due to asymmetric routing, it won’t work. Instead:
+   
+   - Open **Remote Desktop Connection** on your local machine
+   - In the **Computer** field, enter:
+     ```
+     <Firewall_Public_IP>:<Custom_Port>
+     ```
+     For example:
+     ```
+     20.45.123.10:50001
+     ```
+     - `20.45.123.10` → Public IP of Azure Firewall
+     - `50001` → The destination port you configured in the DNAT rule
+   
+   This tells RDP to connect to the firewall, which then forwards the traffic to your VM’s private IP on port 3389.
+
+   ---
+   
+   ### 🔐 Credentials & Access
+   - Use the **VM’s local admin credentials** to log in.
+   - Make sure the VM’s **Windows Firewall** allows RDP.
+   - NSG should allow inbound traffic on port 3389 from the firewall.
+   
+   
+   ### 🧪 Test It
+   You can test connectivity using PowerShell:
+   ```powershell
+   Test-NetConnection -ComputerName <Firewall_Public_IP> -Port <Custom_Port>
+   ```
+   
+   If it succeeds, you're good to go!
+
 
 **Key Considerations:**
 
